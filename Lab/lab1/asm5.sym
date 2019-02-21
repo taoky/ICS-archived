@@ -1,0 +1,33 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	CHOOSE            3000
+//	CON1              300A
+//	CON2              3011
+//	GCD1              3019
+//	HANDLE_B_MINUS_A  3020
+//	GCD2              3023
+//	S1                3024
+//	R0RS0             3028
+//	START             302A
+//	NSET              302E
+//	R1RS0             3032
+//	START1            3034
+//	NSET1             3038
+//	S2                303E
+//	R0RS1             3040
+//	START2            3042
+//	NSET2             3046
+//	S3                304B
+//	R1RS1             304D
+//	START3            304F
+//	NSET3             3053
+//	S4                3058
+//	S5                305F
+//	S6                3065
+//	STOP              3069
+//	HUNDRED           306A
+//	TTHOUSAND         306B
+//	THUNDRED          306C
+

@@ -1,0 +1,232 @@
+%!TEX encoding = UTF-8 Unicode
+%!TEX program = xelatex
+
+\documentclass{article}
+
+\title{ICS Lab 0}
+\author{@taoky}
+\date{\today}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[toc,page]{appendix}
+\usepackage[hyphens,spaces]{url}
+\usepackage{listings,lstautogobble}
+
+\bibliographystyle{plain}
+
+\lstdefinelanguage[lc3]{Assembler}{
+	morekeywords={[1]ADD, AND, BRn, BRzp, BRz, BRnp, BRp, BRnz, BR, BRnzp, JMP, JSR, JSRR, LD, LDI, LDR, LEA, NOT, RET,%
+		RTI, ST, STI, STR, TRAP, HALT},
+	morekeywords={[2].ORIG, .FILL, .BLKW, .STRINGZ, .END},
+	morekeywords={[3]R0, R1, R2, R3, R4, R5, R6, R7},
+	alsoletter={x\#},
+	morestring=[b]",
+	morestring=[b]',
+	morecomment=[l];,
+}[strings,comments,keywords]
+
+\lstset{
+	language=[lc3]{Assembler},
+	basicstyle=\ttfamily,
+	autogobble=true,
+	breaklines=true,
+	numbers=left,
+	postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+}
+
+\begin{document}
+	\maketitle
+	\section{Introduction}
+	
+	The target of Lab 0 is to write a program which performs a 1-bit arithmetic right shift on the register R0. As the LC-3 ISA does not include the arithmetic (or logic) shift instructions, we have to write codes by ourselves.
+	
+	What is a 1-bit arithmetic right shift? It moves every bit in the operand to the right position, and fills in the vacant bit. But instead of just filling in 0, it fills in the leftmost bit after the move. \cite{Arithmetic_shift}
+	
+	\section{Algorithm}
+	
+	How can we perform an arithmetic right shift with only \texttt{ADD}, \texttt{AND}, \texttt{NOT}, and other simple data movement and control instructions? If we could access every bit in one 16-bit register conveniently, and with some logic gates, it could be an easy problem. However, this method will just bring too much trouble as we are using that simple ISA.
+	
+	So, we have to finish the task in another way. As we pay attention to the size of our program most, putting a lookup table inside program is impractical. And now it is easy to come up with an extremely slow method: for non-negative integers, simply count how many 2s it can subtract (a slow way to simulate dividing it by 2); for negative integers, try to set their MSB to 0, and then treat as non-negative integers. Looks simple, right? However, when you put it into practice, problems come. For example, when it is a negative integer, how to set MSB to 0? It's not quite an easy task, as the size of immediate numbers is limited. Handling negative numbers is hard, and may involve much more instructions, which we don't want.
+	
+	Now, how can we finish our task? When we focus on what happens when performing an arithmetic right shift, we may have a bright new idea. When we focus on R0[2], \texttt{AND} it with \texttt{0b10}. If the result is not zero, it means R0[2] = 1, and just \texttt{ADD} the value \texttt{0b01} to our result variable.
+	
+	A good news to us is that performing logical left shift to \texttt{0b10} and \texttt{0b01} is quite easy: just \texttt{ADD} them to themselves! When the value \texttt{AND} with R0 overflows and comes to zero, \texttt{AND} the other value with R0, and add to result. Then just let R0 to the same value to the result.
+	
+	This is my algorithm to this lab.
+	
+	\section{Program Writing}
+	
+	Writing assembly programs, especially with a simple ISA and the requirement to be short in size, is not an easy task. Although this lab asks us to write our program binary in a hex editor directly, writing in assembly first is a good idea, as it makes analyzing and debugging better. Please note that we are writing in \textbf{``pseudo-assembly"}, which CANNOT be directly assembles by existing LC-3 assemblers. 
+	
+	Following our thoughts on the algorithm, we can write it down fast.
+	
+	\begin{lstlisting}[caption={My first, ``unstripped" program},captionpos=b]
+	AND R1, R1, #0
+	AND R2, R2, #0
+	AND R4, R4, #0 ; our result variable
+	ADD R1, R1, #2 ; 0b10
+	ADD R2, R2, #1 ; 0b01
+	AND R3, R1, R0 ; R3 is a temporary variable. Here check if R1 & R0 == 0
+	BRz #1 ; it means, when in the execute stage, pc += 1. Here, if zero, don't add R2 to result
+	ADD R4, R4, R2
+	ADD R2, R2, R2 ; R2 << 1
+	ADD R1, R1, R1 ; R1 << 1
+	BRnp #-6 ; jump to line 6
+	AND R3, R2, R0 ; handling the MSB
+	ADD R4, R4, R3 ; adding to result
+	AND R0, R0, #0 ; clear R0
+	ADD R0, R0, R4 ; R0 = result!
+	TRAP x25 ; HALT
+	\end{lstlisting}
+	
+	It's easy, isn't it? It can pass my test-cases (See Section \ref{sec:testing}) and work fine, but there still have some room for improvement.
+	
+	Firstly, the initialization stage can be simpler. When we already have R4 set to 0, why still we set R1 and R2 to 0? Just let R1 = R4 + 2 and R2 = R4 + 1. Now we save 2 instructions!
+	
+	And then, the R3 in our final stage is unnecessary: directly let R0 = R0 \& R2. As R2 = \texttt{0b1000\_0000\_0000\_0000}, if R0 is negative, it will set to R2; else, it will be 0. So we save 2 instructions, too! And now, it is:
+	
+	\begin{lstlisting}[caption={Final ``pseudo-assembly" program},captionpos=b]
+	AND R4, R4, #0 ; our result variable
+	ADD R1, R4, #2 ; 0b10
+	ADD R2, R4, #1 ; 0b01
+	AND R3, R1, R0 ; R3 is a temporary variable. Here check if R1 & R0 == 0
+	BRz #1 ; it means, when in the execute stage, pc += 1. Here, if zero, don't add R2 to result
+	ADD R4, R4, R2
+	ADD R2, R2, R2 ; R2 << 1
+	ADD R1, R1, R1 ; R1 << 1
+	BRnp #-6 ; jump to line 6
+	AND R0, R0, R2 ; clear R0, and set MSB
+	ADD R0, R0, R4 ; R0 = result!
+	TRAP x25 ; HALT
+	\end{lstlisting}
+	
+	There are rumors that the shortest correct program only uses 11 instructions. I tried, but failed.
+	
+	Now we need to write our program in binary. As using \texttt{lc3as} is forbidden, we have to pick up our hex editor, and write it by ourselves.
+	
+	Check the LC-3 instruction set table, and write binary first.
+	
+	\begin{lstlisting}[caption={Binary},captionpos=b]
+	0101 100 100 1 00000 ; AND R4 R4 1 #0
+	0001 001 100 1 00010 ; ADD R1 R4 1 #2
+	0001 010 100 1 00001 ; ADD R2 R4 1 #1
+	0101 011 001 0 00 000 ; AND R3 R1 0 00 R0
+	0000 010 000000001 ; BR z #1
+	0001 100 100 0 00 010 ; ADD R4 R4 0 00 R2
+	0001 010 010 0 00 010 ; ADD R2 R2 0 00 R2
+	0001 001 001 0 00 001 ; ADD R1 R1 0 00 R1
+	0000 101 111111010 ; BR np #-6
+	0101 000 000 0 00 010 ; AND R0 R0 0 00 R2
+	0001 000 000 0 00 100 ; ADD R0 R0 0 00 R4
+	1111 0000 00100101 ; TRAP x25
+	\end{lstlisting}
+	
+	Let's convert it to hex. The \texttt{int()} function in Python is quite helpful. After stripping comments, we can convert them conveniently in Python. Take the first line as an example.
+	
+	\begin{lstlisting}[language=Python, caption={Converting from binary to hex},captionpos=b]
+	hex(int("0b" + "0101 100 100 1 00000".replace(" ", ""), 2))
+	# it outputs "0x5920"
+	\end{lstlisting}
+	
+	And we finally get a list of hex numbers.
+	
+	\begin{lstlisting}[caption={The hex numbers},captionpos=b]
+	0x5920 0x1322 0x1521 0x5640 0x401 0x1902 0x1482 0x1241 0xbfa 0x5002 0x1004 0xf025
+	\end{lstlisting}
+	
+	LC-3 is big-endian, so write it directly to a hex editor is OK. I write a small program to help.
+	
+	\begin{lstlisting}[language=Python, caption={The convertion program},captionpos=b]
+	import struct
+	
+	s = """0101 100 100 1 00000 ; AND R4 R4 1 #0
+	0001 001 100 1 00010 ; ADD R1 R4 1 #2
+	0001 010 100 1 00001 ; ADD R2 R4 1 #1
+	0101 011 001 0 00 000 ; AND R3 R1 0 00 R0
+	0000 010 000000001 ; BR z #1
+	0001 100 100 0 00 010 ; ADD R4 R4 0 00 R2
+	0001 010 010 0 00 010 ; ADD R2 R2 0 00 R2
+	0001 001 001 0 00 001 ; ADD R1 R1 0 00 R1
+	0000 101 111111010 ; BR np #-6
+	0101 000 000 0 00 010 ; AND R0 R0 0 00 R2
+	0001 000 000 0 00 100 ; ADD R0 R0 0 00 R4
+	1111 0000 00100101 ; TRAP x25"""
+	
+	a = s.splitlines()
+	f = open("program.bin", "wb")
+	
+	for i in a:
+		new_i = i.strip()
+		x = int("0b"+new_i[:new_i.find(" ;")].replace(" ", ""), 2)
+		print(hex(x), end=' ')
+		binary = struct.pack(">H", x)
+		f.write(binary)
+	\end{lstlisting}
+	
+	And now, we finally get our program!
+	
+	\section{Testing}
+	\label{sec:testing}
+	
+	Testing program is very important, as it makes sure our program works in the right way.
+	
+	What can we do now? The most straight-forward way is to run our program with \texttt{lc3sim}. However, the file structure of \texttt{obj} file is a little different from our binary. The first two bytes are taken as the start location of our program, so we have to manually add \texttt{0x3000} before our instructions.
+	
+	Set the register R0 to our value, and a breakpoint at \texttt{HALT}, and then we can see the result. Our program can pass the example. But what's about other values?
+	
+	Let's write an equivalent in C.
+	
+	\begin{lstlisting}[language=C, caption={The C program, which does the same task},captionpos=b]
+	#include <stdio.h>
+	#include <stdlib.h>
+	
+	int main(int argc, char *argv[]) {
+		if (argc != 3) {
+			puts("Missing R0 or base");
+			return -1;
+		}
+		signed short r0 = strtol(argv[1], (char **)NULL, atoi(argv[2]));
+		// printf("%hd\n", r0);
+		signed short result = r0 >> 1;
+		printf("x%04hX\n", result);
+		return 0;
+	}
+	
+	\end{lstlisting}
+	
+	Although for signed integers, whether right shift is arithmetic is implementation-dependent, the compilers on both macOS (clang) and Linux (gcc) take it as arithmetic.
+	
+	This C program requires \texttt{argv[1]} as R0, and \texttt{argv[2]} as the base of \texttt{argv[1]}.
+	
+	Then just write a small shell script.
+	
+	\begin{lstlisting}[language=bash, caption={The testing script},captionpos=b]
+	for index in {0..255}
+	do
+		i=$(shuf -i 0-65536 -n 1)
+		j=$(echo "obase=16; $i" | bc)
+		echo "Testing $j"
+		lc3_result=$(echo -e "r r0 $j\nb s 300b\nc\nquit\n" | lc3sim program.bin | tail -3 | head -1 | cut -c 4-8)
+		c_result=$(./lab0 $j 16)
+		if [ $lc3_result != $c_result ]
+		then
+			echo "FAILED!"
+			echo "lc3_result: $lc3_result, expected $c_result"
+			exit
+		fi
+	done
+	\end{lstlisting}
+	
+	This script is not written beautifully, but at least it can work. The biggest drawback is that it requires changing the breakpoint location manually. We won't test R7, as we didn't use it at all.
+	
+	Run this script, and our program passes all random test-cases. It's done!
+	
+	\section{Appendix}
+	The \texttt{program.bin} in the zipped file DOES NOT include the leading \texttt{0x3000}.
+	
+	\bibliography{ref}
+\end{document}

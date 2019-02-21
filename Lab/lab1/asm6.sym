@@ -1,0 +1,35 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	CHECK             3000
+//	CHOOSE            3004
+//	CON1              300E
+//	CON2              3015
+//	GCD1              301D
+//	HANDLE_B_MINUS_A  3024
+//	GCD2              302A
+//	S1                302B
+//	R0RS0             302F
+//	START             3031
+//	NSET              3035
+//	R1RS0             3039
+//	START1            303B
+//	NSET1             303F
+//	S2                3045
+//	R0RS1             3047
+//	START2            3049
+//	NSET2             304D
+//	S3                3052
+//	R1RS1             3054
+//	START3            3056
+//	NSET3             305A
+//	S4                305F
+//	S5                3066
+//	S6                306C
+//	STOP              3070
+//	BAD_END           3072
+//	VAL1              3075
+//	VAL2              3076
+//	VAL3              3077
+

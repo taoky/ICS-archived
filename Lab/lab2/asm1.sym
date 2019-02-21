@@ -1,0 +1,13 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	START             3000
+//	MAIN              3009
+//	FUNC              301B
+//	BRANCH1           3036
+//	STACK_OVERFLOW    3055
+//	GLOBAL            3058
+//	STACK_BASE        3058
+//	MEG               3059
+

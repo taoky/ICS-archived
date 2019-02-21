@@ -1,0 +1,14 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	START             4000
+//	MAIN              4009
+//	FUNC              401D
+//	BRANCH1           403A
+//	STACK_OVERFLOW    405D
+//	GLOBAL            4060
+//	STACK_BASE        4060
+//	STACK_MAX         4061
+//	MEG               4062
+

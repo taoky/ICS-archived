@@ -1,0 +1,4 @@
+r r0 1234
+b s 300f
+continue
+quit

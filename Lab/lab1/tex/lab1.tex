@@ -1,0 +1,592 @@
+%!TEX encoding = UTF-8 Unicode
+%!TEX program = xelatex
+
+\documentclass{article}
+
+\title{ICS Lab 1}
+\author{@taoky}
+\date{\today}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[toc,page]{appendix}
+\usepackage[hyphens,spaces]{url}
+\usepackage{listings,lstautogobble}
+
+\bibliographystyle{plain}
+
+\lstdefinelanguage[lc3]{Assembler}{
+	morekeywords={[1]ADD, AND, BRn, BRzp, BRz, BRnp, BRp, BRnz, BR, BRnzp, JMP, JSR, JSRR, LD, LDI, LDR, LEA, NOT, RET,%
+		RTI, ST, STI, STR, TRAP, HALT},
+	morekeywords={[2].ORIG, .FILL, .BLKW, .STRINGZ, .END},
+	morekeywords={[3]R0, R1, R2, R3, R4, R5, R6, R7},
+	alsoletter={x\#},
+	morestring=[b]",
+	morestring=[b]',
+	morecomment=[l];,
+}[strings,comments,keywords]
+
+\lstset{
+	language=[lc3]{Assembler},
+	basicstyle=\ttfamily,
+	autogobble=true,
+	breaklines=true,
+	numbers=left,
+	postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+	captionpos=b,
+}
+
+\begin{document}
+	\maketitle
+	\section{Introduction}
+	The target of Lab 1 is to write a LC-3 assembly program to solve the greatest common divisor (GCD) problem. The input is two positive 16-bit signed integers stored in R0 and R1, and the output is R0.
+	
+	What is GCD? The GCD of two integers is the largest positive integer which can divide the two original integers. The most famous number theory algorithm, Euclidean algorithm, solves the GCD problem.
+	
+	\section{The Space and Time Complexity}
+	
+	For everyone once participated in any programming contest, it's quite easy to write the Euclidean algorithm code from memory. Here is a C example.
+	
+	\begin{lstlisting}[language=c, caption={The Euclidean algorithm code in C}]
+	signed short gcd(signed short a, signed short b) {
+		if (b == 0)
+			return a;
+		else
+			return gcd(b, a % b);
+	}
+	\end{lstlisting}
+	
+	The integer type is set to \texttt{signed short}, to correspond with LC-3 16-bit registers.
+	
+	However, as we know, there isn't an instruction named \texttt{MOD} or \texttt{DIV} in LC-3 ISA. It's somewhat of a trouble. But a good news is that we only need to consider positive numbers (at least now). So a LC-3-friendly GCD program may look like this.
+	
+	\begin{lstlisting}[language=c, caption={The Euclidean algorithm code, with only subtraction}]
+	signed short gcd_lc3impl(signed short a, signed short b) {
+		while (true) {
+			if (a == b) return a;
+			else if (a > b) a = a - b;
+			else b = b - a; // a < b
+		}
+	}
+	\end{lstlisting}
+	
+	Obviously, the space complexity of our algorithm is $O(1)$, as the extra space we need is a constant no matter how R0 and R1 change. But what about time complexity?
+	
+	From our intuition, when R0 and R1 are close to each other, our algorithm is fast; but when R0 and R1 are far away (e.g. R0 = 1, R1 = 32767), our algorithm will be a little slow. Here, we can get a quick conclusion. Assume R0 as $x$, and R1 as $y$. The worst-case time complexity is $O(\max(x, y))$. The proof is simple: set $x$ as 1, then our program needs at least $y - 1$ subtractions. Although the performance is not so bad by average, is there any better algorithm?
+	
+	Yes. There is a binary GCD algorithm (or Stein's algorithm) designed for computers, as calculating remainders of huge integers is costly for computers. I slightly modified the code in \cite{bgcd}.
+	
+	\begin{lstlisting}[language=c, caption={Binary GCD algorithm implemented in C}]
+	signed short binary_gcd(signed short a, signed short b) {
+		signed short shift = 0;
+		
+		for (; ((a | b) & 1) == 0; shift++)
+		{
+			a >>= 1; b >>= 1;
+		}
+		
+		while ((a & 1) == 0)
+			a >>= 1;
+		
+		do {
+			while ((b & 1) == 0)
+				b >>= 1;
+			if (a > b) {
+				signed short t = a; a = b; b = t;
+			}
+			
+			b = b - a;
+		} while (b != 0);
+		
+		return a << shift;
+	}
+	\end{lstlisting}
+	
+	According to \cite{bgcd}, the worst-case time complexity is $O(n^2)$, while $n$ is the number of bits of the larger number. Here we know the maximum of $n$ is 15 (ignoring the leading 0 indicating it's positive). It seems faster.
+	
+	However, the biggest problem of this algorithm is that it requires a lot right shift operation. We need to reconsider the right shift operation later.
+	
+	Which algorithm is better? We will test their average speed in the next section.
+	
+	\section{Program Writing}
+	
+	\subsection{Algorithm 1: Euclidean Algorithm with Only Subtraction}
+	
+	It's quite easy to write this program according to our algorithm.
+	
+	\begin{lstlisting}[caption={My GCD 1, 1st version}]
+	.ORIG x3000
+	
+	GCD
+	    ; R0 = a, R1 = b
+	    NOT R2, R1
+	    ADD R2, R2, #1 ; R2 = -b
+	    ADD R3, R0, R2 ; check a - b
+	    BRz END
+	    BRn HANDLE_B_MINUS_A
+	    ADD R0, R3, #0
+	    BRnzp GCD
+	    HANDLE_B_MINUS_A NOT R2, R0
+	    		     ADD R2, R2, #1
+	    		     ADD R1, R1, R2 ; b - a
+	    		     BRnzp GCD
+	
+	END HALT
+	
+	.END
+	\end{lstlisting}
+	
+	And we can save 1 instruction in label \texttt{HANDLE\_B\_MINUS\_A} by directly saving the result of \texttt{NOT} of R0 to R1.
+	
+	\begin{lstlisting}[caption={My GCD 1, 2nd version}]
+		.ORIG x3000
+		
+		GCD
+		    ; R0 = a, R1 = b
+		    NOT R2, R1
+		    ADD R2, R2, #1 ; R2 = -b
+		    ADD R3, R0, R2 ; check a - b
+		    BRz END
+		    BRn HANDLE_B_MINUS_A
+		    ADD R0, R3, #0
+		    BRnzp GCD
+		    HANDLE_B_MINUS_A NOT R1, R3
+		    		     ADD R1, R1, #1
+		    		     BRnzp GCD
+		
+		END HALT
+		
+		.END
+	\end{lstlisting}
+	
+	There is a problem here. If R1 is larger than R0 for a long time, the \texttt{HANDLE\_B\_MINUS\_A} may be executed for many times, bringing performance loss. So when $b > a$, we additionally swap R0 and R1.
+	
+	\begin{lstlisting}[caption={My GCD 1, 3rd version}]
+	.ORIG x3000
+	
+	GCD
+	    ; R0 = a, R1 = b
+	    NOT R2, R1
+	    ADD R2, R2, #1 ; R2 = -b
+	    ADD R2, R0, R2 ; check a - b
+	    BRz END
+	    BRn HANDLE_B_MINUS_A
+	    ADD R0, R2, #0
+	    BRnzp GCD
+	    HANDLE_B_MINUS_A NOT R1, R2
+	                     ADD R1, R1, #1
+	                     ; swap R0 and R1
+	                     ADD R2, R1, #0
+	                     ADD R1, R0, #0
+	                     ADD R0, R2, #0
+	                     BRnzp GCD
+	
+	END HALT
+
+	.END
+	\end{lstlisting}
+	
+	Here is the end of our program. But how can we know how many instructions are executed during runtime? A lovely Python program may help.
+	
+	\begin{lstlisting}[language=Python, caption={Benchmark Python program}]
+#!/usr/bin/env python2
+
+from random import *
+from pwn import *
+from fractions import gcd
+import time
+
+#context.log_level = 'debug'
+
+cnt_list = []
+
+for i in range(0, 256):
+    lc3sim = process(argv=["lc3sim", "program.obj"])
+    lc3sim.recvuntil("x3000\n")
+    r0 = randint(1, 32767)
+    r1 = randint(1, 32767)
+    print "Testing R0={}, R1={}".format(hex(r0), hex(r1))
+    halt_point = "300d" # change manually
+    expected_res = "x" + hex(gcd(r0, r1))[2:].rjust(4, "0")
+    lc3sim.send("r r0 {}\nr r1 {}\nb s {}\n".format(hex(r0), hex(r1), halt_point))
+    lc3sim.recvuntil("at x{}.\n".format(halt_point.upper()))
+    cnt = 0
+    while True:
+
+        lc3sim.sendline("n")
+
+        ret = lc3sim.recvlines(3)
+        line_now = ret[-1][20:24].lower()
+
+        if "breakpoint" in ret[0]:
+            # compare result
+            lc3_result = ret[-1][3:8].lower()
+            if lc3_result != expected_res:
+                print "ERROR: expected {}, got {}".format(expected_res, lc3_result)
+                exit(0)
+            cnt_list.append(cnt)
+            print("Passed. Used {} steps".format(cnt))
+            lc3sim.close()
+            break
+        cnt += 1
+
+average = sum(cnt_list) / len(cnt_list)
+print "Average steps: {}".format(average)
+print "Max steps: {}".format(max(cnt_list))
+print "Min steps: {}".format(min(cnt_list))
+
+	\end{lstlisting}
+	
+	This is our benchmark program. We use the Python module \texttt{pwntools} to help us communicate with \texttt{lc3sim} . The breakpoint has to be modified manually.
+	
+	Running benchmark for 5 times, and here is the result.
+	
+	\begin{table}[h]
+	\centering
+	\begin{tabular}{cccccc}
+	        & 1     & 2    & 3     & 4      & 5     \\
+	Average & 510   & 446  & 457   & 676    & 424   \\
+	Max     & 31518 & 8011 & 12703 & 56382 & 4290 \\
+	Min     & 110    & 149  & 131   & 28     & 106  
+	\end{tabular}
+	\caption{Benchmark of Algorithm 1}
+	\end{table}
+	
+	It's astonishing that this algorithm can be so slow (more than 10000 steps) at extreme situation! Maybe it is too slow to be a good GCD program. What's about our second algorithm?
+	
+	\subsection{Algorithm 2: Binary GCD Algorithm}
+	
+	According to the C implementation, we can write LC-3 assembly program.
+	
+	\begin{lstlisting}[caption={My GCD 2, 1st version}]
+.ORIG x3000
+
+ST R7, SaveR7
+AND R2, R2, #0 ; shift
+
+S1 AND R3, R0, #1 ; is R0 odd?
+   BRnp S2
+   AND R3, R1, #1 ; is R1 odd?
+   BRnp S2
+   JSR R0RS
+   JSR R1RS
+   ADD R2, R2, #1
+   BRnzp S1
+
+S2 AND R3, R0, #1
+   BRnp S3
+   JSR R0RS
+   BRnzp S2
+
+S3 AND R3, R1, #1
+   BRnp S4
+   JSR R1RS
+   BRnzp S3
+
+S4 NOT R3, R1
+   ADD R3, R3, R0
+   ADD R3, R3, #1 ; R3 = R0 - R1
+   BRnz S5
+   ADD R4, R1, #0
+   ADD R1, R0, #0
+   ADD R0, R4, #0 ; swap R0 and R1
+
+S5 ADD R1, R3, #0
+   BRp S3
+   BRz S6
+   NOT R1, R1
+   ADD R1, R1, #1
+   BRnzp S3
+
+S6 ADD R2, R2, #-1
+   BRn STOP
+   ADD R0, R0, R0
+   BRnzp S6
+
+STOP LD R7, SaveR7
+     HALT
+
+R0RS ; uses R3, R4, R5 and R6
+     AND R6, R6, #0
+     ADD R5, R6, #1
+     START ADD R4, R5, R5
+           AND R3, R4, R0 ; R3: tmp
+           BRz NSET
+           ADD R6, R6, R5
+           NSET ADD R5, R5, R5
+           BRnp START
+     AND R0, R0, R5
+     ADD R0, R0, R6
+     RET
+
+R1RS ; uses R3, R4, R5 and R6
+     AND R6, R6, #0
+     ADD R5, R6, #1
+     START1 ADD R4, R5, R5
+            AND R3, R4, R1 ; R3: tmp
+            BRz NSET1
+            ADD R6, R6, R5
+            NSET1 ADD R5, R5, R5
+            BRnp START1
+     AND R1, R1, R5
+     ADD R1, R1, R6
+     RET
+
+
+SaveR7 .BLKW 1
+
+.END
+
+	
+	\end{lstlisting}
+	
+	It's quite a long program, and it has some room for improvement. By avoiding subroutines, we can save time \texttt{JSR}, \texttt{RET} and save/load R7. It makes maintaining the program difficult, but it's faster!
+	
+	Here is the final program (without handling the illegal input)
+	
+	\begin{lstlisting}[caption={The final GCD program}]
+	.ORIG x3000
+	
+	AND R2, R2, #0 ; shift
+	
+	S1 AND R3, R0, #1 ; is R0 odd?
+	   BRnp S2
+	   AND R3, R1, #1 ; is R1 odd?
+	   BRnp S2
+	   R0RS0 ; uses R3, R4, R5 and R6
+	     AND R6, R6, #0
+	     ADD R5, R6, #1
+	     START ADD R4, R5, R5
+	           AND R3, R4, R0 ; R3: tmp
+	           BRz NSET
+	           ADD R6, R6, R5
+	           NSET ADD R5, R5, R5
+	           BRnp START
+	     AND R0, R0, R5
+	     ADD R0, R0, R6
+	   R1RS0 ; uses R3, R4, R5 and R6
+	     AND R6, R6, #0
+	     ADD R5, R6, #1
+	     START1 ADD R4, R5, R5
+	            AND R3, R4, R1 ; R3: tmp
+	            BRz NSET1
+	            ADD R6, R6, R5
+	            NSET1 ADD R5, R5, R5
+	            BRnp START1
+	     AND R1, R1, R5
+	     ADD R1, R1, R6
+	   ADD R2, R2, #1
+	   BRnzp S1
+	
+	S2 AND R3, R0, #1
+	   BRnp S3
+	   R0RS1 ; uses R3, R4, R5 and R6
+	     AND R6, R6, #0
+	     ADD R5, R6, #1
+	     START2 ADD R4, R5, R5
+	           AND R3, R4, R0 ; R3: tmp
+	           BRz NSET2
+	           ADD R6, R6, R5
+	           NSET2 ADD R5, R5, R5
+	           BRnp START2
+	     AND R0, R0, R5
+	     ADD R0, R0, R6
+	   BRnzp S2
+	
+	S3 AND R3, R1, #1
+	   BRnp S4
+	   R1RS1 ; uses R3, R4, R5 and R6
+	     AND R6, R6, #0
+	     ADD R5, R6, #1
+	     START3 ADD R4, R5, R5
+	            AND R3, R4, R1 ; R3: tmp
+	            BRz NSET3
+	            ADD R6, R6, R5
+	            NSET3 ADD R5, R5, R5
+	            BRnp START3
+	     AND R1, R1, R5
+	     ADD R1, R1, R6
+	   BRnzp S3
+	
+	S4 NOT R3, R1
+	   ADD R3, R3, R0
+	   ADD R3, R3, #1 ; R3 = R0 - R1
+	   BRnz S5
+	   ADD R4, R1, #0
+	   ADD R1, R0, #0
+	   ADD R0, R4, #0 ; swap R0 and R1
+	
+	S5 ADD R1, R3, #0
+	   BRp S3
+	   BRz S6
+	   NOT R1, R1
+	   ADD R1, R1, #1
+	   BRnzp S3
+	
+	S6 ADD R2, R2, #-1
+	   BRn STOP
+	   ADD R0, R0, R0
+	   BRnzp S6
+	
+	STOP HALT
+	
+	.END
+	
+	\end{lstlisting}
+	
+	Well, is it really FASTER? Benchmark tells us everything, and here is the result.
+	
+	\begin{table}[h]
+	\centering
+	\begin{tabular}{cccccc}
+	        & 1    & 2    & 3    & 4    & 5    \\
+	Average & 1827 & 1863 & 1824 & 1801 & 1856 \\
+	Max     & 2490 & 2483 & 2588 & 2579 & 2448 \\
+	Min     & 907  & 991  & 525  & 833  & 935 
+	\end{tabular}
+	\caption{Benchmark of Algorithm 2}
+	\end{table}
+	
+	Not a good news. It's stable in performance, better in extreme situation, but slower than Algorithm 1 by average. (LC-3 ISA is MISSING a right shift instruction!)
+	
+	We can notice that the right shift is too slow here, and for sure there is much room for improvement.
+	
+	\subsection{Algorithm 3: More Space, Less Time}
+	
+	In Lab 0, using more space to build a LUT (lookup table) is not acceptable, because the memory is not large enough to store all possibilities, and the requirement pays much attention to the space of our program. However here, we only need to handle positive numbers, and the memory space is enough.
+	
+	Open a file, and use Python to build a LUT. Here \texttt{f} is a file object.
+	
+	\begin{lstlisting}[language=Python, caption={Building the LUT}]
+	for i in range(0, 32768):
+	    f.write("Z{} .FILL {}\n".format(i, i >> 1))
+	\end{lstlisting}
+	
+	We use R6 to store the address of \texttt{Z0}.
+	
+	\begin{lstlisting}[caption={Algorithm 3: Part 1}]
+	LEA R6, Z0
+	\end{lstlisting}
+	
+	And a right shift can be simply replaced by 2 instructions.
+	
+	\begin{lstlisting}[caption={Algorithm 3: Part 2}]
+	ADD R3, R6, R0 ; take R0 as example
+	LDR R0, R3, #0
+	\end{lstlisting}
+	
+	It's faster than the original program for sure, but is it faster than Algorithm 1? Benchmark tells us everything.
+	
+	\begin{table}[h]
+		\centering
+		\begin{tabular}{cccccc}
+		        & 1    & 2    & 3    & 4    & 5    \\
+		Average & 217 & 220 & 217 & 217 & 219 \\
+		Max     & 267 & 266 & 270 & 277 & 285 \\
+		Min     & 70  & 91  & 89  & 116 & 127 
+		\end{tabular}
+		\caption{Benchmark of Algorithm 3}
+	\end{table}
+	
+	It's much better now! This should be our final algorithm.
+	
+	\section{Handling Illegal Input}
+	
+	If it were a problem in a programming contest, this part were optional, as the input is promised to be positive. However in this lab, this part is necessary.
+	
+	It's not a hard part. It requires 4 instructions at the beginning.
+	
+	\begin{lstlisting}[caption={Checking illegal input}]
+	CHECK ADD R0, R0, #0
+	      BRnz BAD_END
+	      ADD R1, R1, #0
+	      BRnz BAD_END
+	\end{lstlisting}
+	
+	I decide that if it's illegal, \textbf{the R0 is set to -1}; else is the GCD of R0 and R1.
+	
+	This is the FINAL assembly code.
+	
+	\begin{lstlisting}[caption={Final code}]
+	.ORIG x3000
+	
+	CHECK ADD R0, R0, #0
+	      BRnz BAD_END
+	      ADD R1, R1, #0
+	      BRnz BAD_END
+	
+	LEA R6, Z0
+	AND R2, R2, #0 ; shift
+	
+	S1 AND R3, R0, #1 ; is R0 odd?
+	   BRnp S2
+	   AND R3, R1, #1 ; is R1 odd?
+	   BRnp S2
+	   R0RS0
+	     ADD R3, R6, R0
+	     LDR R0, R3, #0
+	   R1RS0
+	     ADD R3, R6, R1
+	     LDR R1, R3, #0
+	   ADD R2, R2, #1
+	   BRnzp S1
+	
+	S2 AND R3, R0, #1
+	   BRnp S3
+	   R0RS1
+	     ADD R3, R6, R0
+	     LDR R0, R3, #0
+	   BRnzp S2
+	
+	S3 AND R3, R1, #1
+	   BRnp S4
+	   R1RS1
+	     ADD R3, R6, R1
+	     LDR R1, R3, #0
+	   BRnzp S3
+	
+	S4 NOT R3, R1
+	   ADD R3, R3, R0
+	   ADD R3, R3, #1 ; R3 = R0 - R1
+	   BRnz S5
+	   ADD R4, R1, #0
+	   ADD R1, R0, #0
+	   ADD R0, R4, #0 ; swap R0 and R1
+	
+	S5 ADD R1, R3, #0
+	   BRp S3
+	   BRz S6
+	   NOT R1, R1
+	   ADD R1, R1, #1
+	   BRnzp S3
+	
+	S6 ADD R2, R2, #-1
+	   BRn STOP
+	   ADD R0, R0, R0
+	   BRnzp S6
+	
+	STOP HALT
+	
+	BAD_END AND R0, R0, #0
+	        ADD R0, R0, #-1
+	        HALT
+	
+	Z0 .FILL 0
+	Z1 .FILL 0
+	Z2 .FILL 1
+	Z3 .FILL 1
+	Z4 .FILL 2
+	; the following part is skipped, for there are too many.
+	; ...
+	
+	.END
+	
+	\end{lstlisting}
+	
+	It's done!
+	
+	\bibliography{ref}
+\end{document}

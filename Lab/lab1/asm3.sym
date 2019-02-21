@@ -1,0 +1,19 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	S1                3002
+//	S2                300A
+//	S3                300E
+//	S4                3012
+//	S5                3019
+//	S6                301F
+//	STOP              3023
+//	R0RS              3025
+//	START             3027
+//	NSET              302B
+//	R1RS              3030
+//	START1            3032
+//	NSET1             3036
+//	SaveR7            303B
+

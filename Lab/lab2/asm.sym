@@ -1,0 +1,11 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	START             3000
+//	MAIN              300A
+//	FUNC              301F
+//	BRANCH1           303B
+//	GLOBAL            3060
+//	STACK_BASE        3060
+

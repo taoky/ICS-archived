@@ -1,0 +1,288 @@
+%!TEX encoding = UTF-8 Unicode
+%!TEX program = xelatex
+
+\documentclass{article}
+
+\title{ICS Lab 2}
+\author{@taoky}
+\date{\today}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[toc,page]{appendix}
+\usepackage[hyphens,spaces]{url}
+\usepackage{listings,lstautogobble}
+
+\bibliographystyle{plain}
+
+\lstdefinelanguage[lc3]{Assembler}{
+	morekeywords={[1]ADD, AND, BRn, BRzp, BRz, BRnp, BRp, BRnz, BR, BRnzp, JMP, JSR, JSRR, LD, LDI, LDR, LEA, NOT, RET,%
+		RTI, ST, STI, STR, TRAP, HALT},
+	morekeywords={[2].ORIG, .FILL, .BLKW, .STRINGZ, .END},
+	morekeywords={[3]R0, R1, R2, R3, R4, R5, R6, R7},
+	alsoletter={x\#},
+	morestring=[b]",
+	morestring=[b]',
+	morecomment=[l];,
+}[strings,comments,keywords]
+
+\lstset{
+	language=[lc3]{Assembler},
+	basicstyle=\ttfamily,
+	autogobble=true,
+	breaklines=true,
+	numbers=left,
+	postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+	captionpos=b,
+}
+
+\begin{document}
+	\maketitle
+	\section{Introduction}
+	This lab requires us to ``compile" the given C code to LC-3 assembly language. During this process, we have to build the calling conventions and the ABI by ourselves.
+	
+	The C code snippet follows here.
+	
+	\begin{lstlisting}[language=c]
+	typedef int i16;
+	typedef unsigned int u16;
+	i16 func(i16 n, i16 a, i16 b, i16 c, i16 d, i16 e, i16 f){  //Lots of arguments, hah?
+	    i16 t = GETC() - '0' + a + b + c + d + e + f;
+	    if(n > 1){
+	        i16 x = func(n - 1, a, b, c, d, e, f);
+	        i16 y = func(n - 2, a ,b, c, d, e, f);
+	        return x + y + t - 1;
+		} else {
+			return t; 
+		}
+	}
+	i16 main(void){
+	    i16 n = GETC() - '0';
+	    return func(n, 0, 0, 0, 0, 0, 0);
+	}
+	_Noreturn void __start(){
+	    /*
+	        Here is where this program actually starts executing.
+	        Complete this function to do some initialization in your compiled assembly.
+	        TODO: Set up C runtime.
+	    */
+	    u16 __R0 = main(); //The return value of function main() should be moved to R0.
+	    
+		HALT(); 
+	}
+	\end{lstlisting}
+	\section{Initialization Process}
+	The \texttt{\_\_start()} in the C code takes the responsibility for initializing before executing \texttt{main()}. Here, we won't write anything to memory. Our initialization process only modifies registers.
+	
+	We set \texttt{R6} as the stack pointer, and \texttt{R5} as the negative value of the stack pointer when the stack is full, for error handling. Other registers are all set to 0.
+	
+	\begin{lstlisting}[caption={Initialization code}]
+	START ; initialization
+	      LD R6, STACK_BASE ; R6 is the stack pointer
+	      LD R5, STACK_MAX
+	      AND R0, R0, #0
+	      AND R1, R0, #0
+	      AND R2, R0, #0
+	      AND R3, R0, #0
+	      AND R4, R0, #0
+	      
+	 ; other codes...
+	 
+	 GLOBAL 
+	        STACK_BASE .FILL xFE00
+	        STACK_MAX .FILL x1200 ; -xEE00
+	        ; other codes...
+	\end{lstlisting}
+	
+	Well, why should there be a stack? That's because the C code snippet involves recursion. If we don't use stack, when a function calling itself, the value of the caller will be overwritten by the callee, which we cannot accept.
+	
+	Our stack is from \texttt{xFDFF}, and grows backwards until \texttt{xEE01}. It's a large space.
+	
+	\section{Calling Conventions}
+	
+	There actually is a calling convention on our book\cite[Chapter~14]{ics}, but in this lab, it can be greatly simplified.
+	
+	According to the speed weights table, the usage of \texttt{LDI} and \texttt{STI} should be avoided, and the less data stored in stack, the better.
+	
+	Firstly, \texttt{R5} is originally used as frame pointer. However, we can still visit local variables of a function with stack pointer, and a frame pointer is not a necessity. 
+	
+	Secondly, the return value can be directly stored in \texttt{R0}. Thus we can save some time reading or writing memory.
+	
+	We don't need to consider supporting variadic functions like \texttt{printf()}, so we choose callee clean-up. The callee will restore the stack to its previous state.
+	
+	And also, caller should save all registers data if necessary.
+	
+	So, now our calling convention is here:
+	
+	\begin{itemize}
+	\item Function arguments are pushed on the stack in the right-to-left order.
+	\item Before jumping into a subroutine (function), the caller should:
+	\subitem Save register data if necessary.
+	\subitem Push arguments to stack.
+	\item After jumping into a subroutine (function), the callee should:
+	\subitem Push \texttt{R7} (return address) to stack.
+	\subitem Allocate memory on stack for local variables if necessary.
+	\subitem After that, it's prohibited for callee to modify the value of \texttt{R6} until cleaning up. And also, it cannot modify memory content outside of its stack, unless it's a global variable.
+	\subitem The return value is saved to \texttt{R0}. Other registers can be modified.
+	\subitem When cleaning up, pop local variables. Pop the return address on stack and assign it to \texttt{R7}. Then pop all arguments, and return.
+	\item After it's returned from the subroutine (function), the caller should:
+	\subitem Save the return value \texttt{R0}.
+	\subitem Restore all saved register data if necessary.
+	\end{itemize}
+	\section{Other Standards}
+	As we know, the \texttt{main()} is the first function we execute, and we can assume that it will be executed only once during the whole process. So when leaving \texttt{main()}, it can leave an unbalanced stack, the only thing it needs to ensure is that the return value is in \texttt{R0}.
+	\section{Error Handling}
+	The only error we might meet, is stack overflow. Our recursion function may exceed the recursion depth, and break our stack. So before pushing something, the stack will be checked whether it has enough space. If not, it will jump to error-handling code, which writes an error message to screen, and halts the computer.
+	
+	There won't be any underflow error when our code is well-written.
+	\begin{lstlisting}[caption={Check stack space example}]
+	; check if enough space for storing 8 elements?
+	  ADD R4, R6, R5
+	  ADD R4, R4, #-8
+	  BRnz STACK_OVERFLOW
+	  
+	  ; other codes...
+	  
+	  STACK_OVERFLOW LEA R0, MEG ; MEG stores error message
+	                 PUTS
+	                 HALT
+	\end{lstlisting}
+	\section{Final Code}
+	\begin{lstlisting}[caption={Our code}]
+	.ORIG x3000
+	
+	START ; initialization
+	      LD R6, STACK_BASE ; R6 is the stack pointer
+	      LD R5, STACK_MAX
+	      AND R0, R0, #0
+	      AND R1, R0, #0
+	      AND R2, R0, #0
+	      AND R3, R0, #0
+	      AND R4, R0, #0
+	
+	      JSR MAIN ; return value in top of the stack
+	      HALT
+	
+	MAIN ; main()
+	     ; check if enough space for storing 8 elements?
+	     ADD R4, R6, R5
+	     ADD R4, R4, #-8
+	     BRnz STACK_OVERFLOW
+	
+	     ADD R6, R6, #-1
+	     STR R7, R6, #0
+	
+	     GETC
+	    ;  OUT ; for debug only
+	     ADD R0, R0, #-16
+	     ADD R0, R0, #-16
+	     ADD R0, R0, #-16 ; now, R0 = n
+	     ADD R6, R6, #-7 ; 7 arguments
+	     STR R0, R6, #0
+	     STR R1, R6, #1 ; R1 = 0 now
+	     STR R1, R6, #2
+	     STR R1, R6, #3
+	     STR R1, R6, #4
+	     STR R1, R6, #5
+	     STR R1, R6, #6
+	
+	     JSR FUNC
+	     LDR R7, R6, #0
+	     ; R0 is naturally the return value, directly return
+	     RET
+	
+	FUNC ADD R4, R6, R5
+	     ADD R4, R4, #-3
+	     BRnz STACK_OVERFLOW
+	
+	     ADD R6, R6, #-1
+	     STR R7, R6, #0
+	     ADD R6, R6, #-2 ; 2 local variables: t, x; y won't be stored in stack
+	     
+	     GETC
+	    ;  OUT ; for debug only
+	     ADD R0, R0, #-16
+	     ADD R0, R0, #-16
+	     ADD R0, R0, #-16
+	     LDR R1, R6, #4 ; a
+	     ADD R0, R0, R1
+	     LDR R1, R6, #5
+	     ADD R0, R0, R1
+	     LDR R1, R6, #6
+	     ADD R0, R0, R1
+	     LDR R1, R6, #7
+	     ADD R0, R0, R1
+	     LDR R1, R6, #8
+	     ADD R0, R0, R1
+	     LDR R1, R6, #9
+	     ADD R0, R0, R1
+	     STR R0, R6, #1 ; stores t
+	     LDR R2, R6, #3 ; loads n
+	     ADD R2, R2, #-1 ; R2 = n - 1
+	     BRp BRANCH1
+	     ; BRANCH2
+	     ; R0 still stores t, so
+	     LDR R7, R6, #2
+	     ADD R6, R6, #10
+	     RET
+	     BRANCH1 ; now R2 stores n - 1
+	             ADD R6, R6, #-7
+	             ADD R4, R6, R5
+	             BRnz STACK_OVERFLOW
+	
+	             STR R2, R6, #0
+	             AND R3, R3, #0
+	             STR R3, R6, #1 
+	             STR R3, R6, #2 
+	             STR R3, R6, #3 
+	             STR R3, R6, #4 
+	             STR R3, R6, #5 
+	             STR R3, R6, #6
+	             JSR FUNC ; after that, return value is in R0
+	             STR R0, R6, #0 ; store the return value x
+	             LDR R2, R6, #3 ; reload n
+	             ADD R2, R2, #-2
+	             ADD R6, R6, #-7
+	
+	             ADD R4, R6, R5
+	             BRnz STACK_OVERFLOW
+	
+	             AND R3, R3, #0
+	             STR R2, R6, #0
+	             STR R3, R6, #1 
+	             STR R3, R6, #2 
+	             STR R3, R6, #3 
+	             STR R3, R6, #4 
+	             STR R3, R6, #5 
+	             STR R3, R6, #6
+	             JSR FUNC ; y = R0
+	             LDR R2, R6, #0 ; loads x
+	             ADD R0, R0, R2
+	             LDR R2, R6, #1 ; loads t
+	             ADD R0, R0, R2
+	             ADD R0, R0, #-1 ; ret value
+	             LDR R7, R6, #2
+	             ADD R6, R6, #10
+	             RET
+	
+	STACK_OVERFLOW LEA R0, MEG
+	               PUTS
+	               HALT
+	
+	GLOBAL 
+	       STACK_BASE .FILL xFE00
+	       STACK_MAX .FILL x1200 ; -xEE00
+	    ;    STACK_MAX .FILL x0300 ; -xFD00
+	       MEG .STRINGZ "Stack overflow detected. This computer will be halting immediately."
+	.END
+	\end{lstlisting}
+	
+	There are some optimizations when writing code. For example, the \texttt{func()}'s stack only stores \texttt{t} and \texttt{x}, as when we get \texttt{y}, we don't need to store it to stack.
+	
+	Several test-cases are tested, and it returns correctly.
+	
+	\bibliography{ref}
+\end{document}

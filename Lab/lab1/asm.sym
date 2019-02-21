@@ -1,0 +1,8 @@
+// Symbol table
+// Scope level 0:
+//	Symbol Name       Page Address
+//	----------------  ------------
+//	GCD               3000
+//	HANDLE_B_MINUS_A  3007
+//	END               300B
+

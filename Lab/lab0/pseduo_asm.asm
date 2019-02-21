@@ -1,0 +1,14 @@
+AND R1, R1, #0  ;x3000
+AND R2, R2, #0
+ADD R1, R1, #2
+ADD R2, R2, #1
+AND R3, R1, R0
+BRnp #1
+AND R4, R2, R0
+ADD R2, R2, R2
+ADD R1, R1, R1
+BRnp #-6
+AND R4, R2, R0
+AND R0, R0, #0
+ADD R0, R0, R4
+TRAP x25
